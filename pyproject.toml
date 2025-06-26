@@ -24,4 +24,5 @@ dependencies = [
     "e2b>=1.5.2",
     "verifiers>=0.1.1",
     "dspy>=2.6.27",
+    "matplotlib>=3.10.3",
 ]
