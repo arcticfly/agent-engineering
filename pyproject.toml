@@ -26,3 +26,6 @@ dependencies = [
     "dspy>=2.6.27",
     "matplotlib>=3.10.3",
 ]
+
+[tool.uv.workspace]
+members = ["email-agent"]
