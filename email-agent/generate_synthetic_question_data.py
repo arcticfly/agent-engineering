@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Iterator, List, Dict, Any, cast, Literal
+from typing import Iterator, List, Literal
 
 from local_email_db import DEFAULT_DB_PATH
-from project_types import Email, SyntheticQuery
+from project_types import Email, Scenario
 from rich import print
 
 # Third-party
@@ -250,7 +250,7 @@ async def generate_dataset_for_inbox(
             qa_pairs = await generate_qa_pairs_for_batch(batch, model=model)
             for qa in qa_pairs:
                 f.write(
-                    SyntheticQuery(
+                    Scenario(
                         id=dataset_entry_id,
                         question=qa.question,
                         answer=qa.answer,

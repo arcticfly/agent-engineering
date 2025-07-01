@@ -1,14 +1,17 @@
 Classes outline:
 
-Will:
+Lesson 5:
 
-- High-level overview of how GRPO works.
-  - rollouts
-  - advantage estimation
-  - policy update
+- (rollout function magically works)
+- Show how to write an eval
+- Eval a bunch of prompted models
+- Show how to use weave to debug
+- Write the training loop
+- Start a model training
 
-Kyle:
+Lesson 6:
 
-- Explain task
-- Explain environment
-- Show email dataset and how it's used
+- Observability
+- Running more experiments
+- LLM-as-judge
+- Course recap

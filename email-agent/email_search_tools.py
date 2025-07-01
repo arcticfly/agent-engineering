@@ -6,10 +6,6 @@ from dataclasses import dataclass
 from local_email_db import DEFAULT_DB_PATH
 from project_types import Email
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
 
 conn = None
 

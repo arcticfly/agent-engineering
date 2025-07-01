@@ -14,7 +14,7 @@ class Email(BaseModel):
     file_name: Optional[str] = None
 
 
-class SyntheticQuery(BaseModel):
+class Scenario(BaseModel):
     id: int
     question: str
     answer: str
