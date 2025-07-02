@@ -19,7 +19,7 @@ def load_scenarios(
     if max_messages is not None:
         dataset = dataset.filter(lambda x: len(x["message_ids"]) <= max_messages)
 
-    if shuffle or seed is not None:
+    if shuffle or (seed is not None):
         if seed is not None:
             dataset = dataset.shuffle(seed=seed)
         else:

@@ -1,3 +1,4 @@
+import art
 from textwrap import dedent
 from litellm import acompletion
 from rich import print
@@ -14,6 +15,7 @@ from tenacity import retry, stop_after_attempt
 from textwrap import dedent
 from project_types import Scenario
 import weave
+from art.utils.litellm import convert_litellm_choice_to_openai
 
 litellm.cache = Cache(type=LiteLLMCacheType.DISK)
 
@@ -21,7 +23,7 @@ load_dotenv()
 
 MAX_TURNS = 10
 
-weave.init(project_name="agent-class-art")
+weave.init(project_name="agent-class-art-tmp")
 
 
 class CorrectnessJudgeResponse(BaseModel):
@@ -77,14 +79,23 @@ class FinalAnswer(BaseModel):
     source_ids: list[str]
 
 
-async def run_agent(scenario: Scenario) -> FinalAnswer | None:
+class ProjectTrajectory(art.Trajectory):
+    final_answer: FinalAnswer | None = None
+
+
+async def run_agent(model: art.Model, scenario: Scenario) -> ProjectTrajectory:
+    traj = ProjectTrajectory(
+        reward=0.0,
+        messages_and_choices=[],
+    )
+
     system_prompt = dedent(
         """
         You are an email search assistant. You can use the tools provided to answer the user's question.
         """
     )
 
-    messages = [
+    traj.messages_and_choices = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": scenario.question},
     ]
@@ -103,56 +114,77 @@ async def run_agent(scenario: Scenario) -> FinalAnswer | None:
     def return_final_answer(
         answer: str, reference_message_ids: list[str]
     ) -> FinalAnswer:
+        """Return the final answer and the message IDs of the emails that were used to generate the answer."""
         return FinalAnswer(answer=answer, source_ids=reference_message_ids)
 
     tools = [search_inbox, read_email, return_final_answer]
     tools_by_name = {t.__name__: t for t in tools}
 
+    if model.trainable:
+        litellm_model_name = f"hosted_vllm/{model.name}"
+    else:
+        litellm_model_name = model.name
+
     for turn in range(MAX_TURNS):
         response = await acompletion(
-            model="openai/gpt-4.1-mini",
-            messages=messages,
-            caching=True,
+            model=litellm_model_name,
+            base_url=model.inference_base_url,
+            api_key=model.inference_api_key,
+            temperature=1,
+            messages=traj.messages(),
+            caching=not model.trainable,
             tools=[convert_to_openai_tool(t) for t in tools_by_name.values()],
         )
 
         response_message = response.choices[0].message  # type: ignore[attr-defined]
-        messages.append(response_message.model_dump(exclude_none=True))
+        traj.messages_and_choices.append(
+            convert_litellm_choice_to_openai(response.choices[0])  # type: ignore[attr-defined]
+        )  # type: ignore[attr-defined]
 
-        if response_message.content:
-            return None
+        if response_message.content or not response_message.tool_calls:
+            # We always want tool calls. If they're missing, the model isn't
+            # behaving how we want and we should just return the trajectory.
+            return traj
 
-        if not response_message.tool_calls:
-            return None
+        try:
+            for tool_call in response_message.tool_calls:
+                tool_name: str = tool_call.function.name  # type: ignore
+                if tool_name in tools_by_name:
+                    tool_args = json.loads(tool_call.function.arguments)
+                    tool_to_call = tools_by_name[tool_name]
+                    result = tool_to_call(**tool_args)
+                    traj.messages_and_choices.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_name,
+                            "content": str(result),
+                        }  # type: ignore[attr-defined]
+                    )
 
-        for tool_call in response_message.tool_calls:
-            tool_name: str = tool_call.function.name  # type: ignore
-            if tool_name in tools_by_name:
-                tool_args = json.loads(tool_call.function.arguments)
-                tool_to_call = tools_by_name[tool_name]
-                result = tool_to_call(**tool_args)
-                if tool_name == "return_final_answer":
-                    return result
+                    if tool_name == "return_final_answer":
+                        traj.final_answer = result
+                        return traj
+        except Exception as e:
+            print(f"Error parsing tool calls: {e}")
+            return traj
 
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_name,
-                        "content": str(result),
-                    }
-                )
-
-    return None
+    return traj
 
 
-@weave.op()
-async def run_and_score_agent(scenario: Scenario) -> tuple[FinalAnswer | None, float]:
-    answer = await run_agent(scenario)
-    if answer is None:
-        return None, 0.0
-    correctness_judge_response = await judge_correctness(scenario, answer.answer)
-    return answer, correctness_judge_response.accept
+# @weave.op()
+async def run_agent_and_score(
+    model: art.Model, scenario: Scenario
+) -> ProjectTrajectory:
+    traj = await run_agent(model, scenario)
+    if traj.final_answer is None:
+        traj.reward = 0.0
+        return traj
+    correctness_judge_response = await judge_correctness(
+        scenario, traj.final_answer.answer
+    )
+    traj.reward = float(correctness_judge_response.accept)
+    return traj
 
 
 if __name__ == "__main__":
@@ -160,5 +192,6 @@ if __name__ == "__main__":
     from load_scenarios import load_scenarios
 
     scenario = load_scenarios(limit=1)[0]
-    answer = asyncio.run(run_and_score_agent(scenario))
+    model = art.Model(name="openai/gpt-4.1", project="agent-class-art")
+    answer = asyncio.run(run_agent_and_score(model, scenario))
     print(answer)
