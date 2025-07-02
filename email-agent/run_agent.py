@@ -23,7 +23,7 @@ load_dotenv()
 
 MAX_TURNS = 10
 
-weave.init(project_name="agent-class-art-tmp")
+# weave.init(project_name="agent-class-art-tmp")
 
 
 class CorrectnessJudgeResponse(BaseModel):

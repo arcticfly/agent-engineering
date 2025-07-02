@@ -32,4 +32,4 @@ if __name__ == "__main__":
     import asyncio
     from rich import print
 
-    print(asyncio.run(benchmark_all_models(num_scenarios=5)))
+    print(asyncio.run(benchmark_all_models(num_scenarios=100)))
