@@ -5,14 +5,16 @@ from tqdm.asyncio import tqdm
 from run_agent import ProjectTrajectory
 
 
-async def benchmark(model: art.Model, num_scenarios: int) -> float:
+async def benchmark(
+    model: art.Model, num_scenarios: int
+) -> tuple[list[ProjectTrajectory], float]:
     scenarios = load_scenarios(limit=num_scenarios, split="test")
     results: list[ProjectTrajectory] = await tqdm.gather(
         *[run_agent_and_score(model, scenario) for scenario in scenarios],
         desc=f"benchmarking {model.name}",
     )
     scores = [result.reward for result in results]
-    return sum(scores) / len(scores) if scores else 0
+    return results, sum(scores) / len(scores) if scores else 0
 
 
 async def benchmark_all_models(num_scenarios: int) -> dict[str, float]:
@@ -25,11 +27,11 @@ async def benchmark_all_models(num_scenarios: int) -> dict[str, float]:
     results = await asyncio.gather(
         *[benchmark(model, num_scenarios) for model in models]
     )
-    return {model.name: result for model, result in zip(models, results)}
+    return {model.name: score for model, (_results, score) in zip(models, results)}
 
 
 if __name__ == "__main__":
     import asyncio
     from rich import print
 
-    print(asyncio.run(benchmark_all_models(num_scenarios=100)))
+    print(asyncio.run(benchmark_all_models(num_scenarios=5)))

@@ -12,7 +12,6 @@ from email_search_tools import search_emails, read_email
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel, Field
 from tenacity import retry, stop_after_attempt
-from textwrap import dedent
 from project_types import Scenario
 import weave
 from art.utils.litellm import convert_litellm_choice_to_openai
@@ -23,7 +22,7 @@ load_dotenv()
 
 MAX_TURNS = 10
 
-# weave.init(project_name="agent-class-art-tmp")
+weave.init(project_name="agent-class-art")
 
 
 class CorrectnessJudgeResponse(BaseModel):
@@ -83,6 +82,7 @@ class ProjectTrajectory(art.Trajectory):
     final_answer: FinalAnswer | None = None
 
 
+@weave.op()
 async def run_agent(model: art.Model, scenario: Scenario) -> ProjectTrajectory:
     traj = ProjectTrajectory(
         reward=0.0,
@@ -90,8 +90,11 @@ async def run_agent(model: art.Model, scenario: Scenario) -> ProjectTrajectory:
     )
 
     system_prompt = dedent(
-        """
-        You are an email search assistant. You can use the tools provided to answer the user's question.
+        f"""
+        You are an email search agent. You are given a user query and a list of tools you can use to search the user's email. Use the tools to search the user's emails and find the answer to the user's query. You may take up to {MAX_TURNS} turns to find the answer, so if your first seach doesn't find the answer, you can try with different keywords.
+
+        User's email address is {scenario.inbox_address}
+        Today's date is {scenario.query_date}
         """
     )
 
@@ -119,6 +122,7 @@ async def run_agent(model: art.Model, scenario: Scenario) -> ProjectTrajectory:
 
     tools = [search_inbox, read_email, return_final_answer]
     tools_by_name = {t.__name__: t for t in tools}
+    traj.tools = [convert_to_openai_tool(t) for t in tools]  # type: ignore[attr-defined]
 
     if model.trainable:
         litellm_model_name = f"hosted_vllm/{model.name}"
@@ -132,8 +136,9 @@ async def run_agent(model: art.Model, scenario: Scenario) -> ProjectTrajectory:
             api_key=model.inference_api_key,
             temperature=1,
             messages=traj.messages(),
-            caching=not model.trainable,
-            tools=[convert_to_openai_tool(t) for t in tools_by_name.values()],
+            # caching=not model.trainable,
+            caching=False,
+            tools=traj.tools,
         )
 
         response_message = response.choices[0].message  # type: ignore[attr-defined]
@@ -172,7 +177,7 @@ async def run_agent(model: art.Model, scenario: Scenario) -> ProjectTrajectory:
     return traj
 
 
-# @weave.op()
+@weave.op()
 async def run_agent_and_score(
     model: art.Model, scenario: Scenario
 ) -> ProjectTrajectory:
