@@ -11,7 +11,6 @@ Lesson 5:
 
 Lesson 6:
 
-- Observability
-- Running more experiments
+- Make it so we can run experiments
+- Go over the kinds of experiments I ran in ART-E
 - LLM-as-judge
-- Course recap

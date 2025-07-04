@@ -5,24 +5,14 @@ from local_email_db import generate_database
 from art.local import LocalBackend
 from art.utils import iterate_dataset
 from benchmark import benchmark
-
-ROLLOUTS_PER_GROUP = 4
-NUM_EPOCHS = 3
-GROUPS_PER_STEP = 12
-VALIDATION_FREQUENCY = 10
-VALIDATION_NUM_SCENARIOS = 100
-TRAINING_NUM_SCENARIOS = 1000
+from project_types import RunConfig
 
 
-async def train():
+async def train(model: art.TrainableModel[RunConfig]):
     generate_database()
 
-    training_data = load_scenarios(split="train", limit=TRAINING_NUM_SCENARIOS)
-
-    model = art.TrainableModel(
-        base_model="Qwen/Qwen2.5-14B-Instruct",
-        project="agent-class-art",
-        name="model_2",
+    training_data = load_scenarios(
+        split="train", limit=model.config.training_num_scenarios
     )
 
     with LocalBackend() as backend:
@@ -30,14 +20,16 @@ async def train():
 
         training_iterator = iterate_dataset(
             training_data,
-            groups_per_step=GROUPS_PER_STEP,
-            num_epochs=NUM_EPOCHS,
+            groups_per_step=model.config.groups_per_step,
+            num_epochs=model.config.num_epochs,
             initial_step=await model.get_step(),
         )
 
         for batch, epoch, global_step, epoch_step in training_iterator:
-            if global_step % VALIDATION_FREQUENCY == 0:
-                results, score = await benchmark(model, VALIDATION_NUM_SCENARIOS)
+            if global_step % model.config.validation_frequency == 0:
+                results, score = await benchmark(
+                    model, model.config.validation_num_scenarios
+                )
                 await model.log(results)
             groups = []
             for scenario in batch:
@@ -45,16 +37,31 @@ async def train():
                     art.TrajectoryGroup(
                         (
                             run_agent_and_score(model, scenario)
-                            for _ in range(ROLLOUTS_PER_GROUP)
+                            for _ in range(model.config.rollouts_per_group)
                         )
                     )
                 )
 
             finished_groups = await art.gather_trajectory_groups(groups)
-            await model.train(finished_groups)
+            await model.train(
+                finished_groups,
+                config=art.TrainConfig(learning_rate=model.config.learning_rate),
+            )
 
 
 if __name__ == "__main__":
     import asyncio
+    from all_experiments import models
+    import argparse
 
-    asyncio.run(train())
+    parser = argparse.ArgumentParser(description="Train a model")
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="The key of the model to train as defined in all_experiments.py (e.g. 'run_1')",
+    )
+    args = parser.parse_args()
+
+    model = models[args.model]
+
+    asyncio.run(train(model))

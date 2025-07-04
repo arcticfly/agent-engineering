@@ -23,3 +23,13 @@ class Scenario(BaseModel):
     inbox_address: str
     query_date: str
     split: Literal["train", "test"]
+
+
+class RunConfig(BaseModel):
+    num_epochs: int = 1
+    groups_per_step: int = 12
+    validation_frequency: int = 10
+    validation_num_scenarios: int = 100
+    training_num_scenarios: int = 1000
+    rollouts_per_group: int = 4
+    learning_rate: float = 1.2e-5
